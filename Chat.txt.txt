@@ -1,0 +1,559 @@
+
+
+https://chatgpt.com/share/6a4327fd-d3a0-83ea-af2c-1eab5adfeb99
+
+
+AI Chat Documentation - US Loan Approval Analysis Project
+
+
+I have a CSV file called Loan_approval_data_2025.csv with 50000 rows and 20 columns about US and Canada loan applications. Please write Python code for a Jupyter Notebook to load the CSV file using pandas, print the shape, show the first 5 rows, show column names and data types using df.info(), and show basic statistics using df.describe(). The file is in the same folder as the notebook.
+
+Thought for 4s
+The following notebook code uses preprocessing pipelines so defaults_on_file works whether it contains numeric values or categories such as Yes and No.
+Cell 1 — Import libraries and select variables
+
+import numpy as np
+import pandas as pd
+
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, PolynomialFeatures, StandardScaler
+
+# Predictor variables
+features = [
+    "credit_score",
+    "annual_income",
+    "current_debt",
+    "debt_to_income_ratio",
+    "loan_amount",
+    "defaults_on_file",
+    "delinquencies_last_2yrs",
+    "derogatory_marks"
+]
+
+# Target variable
+target = "interest_rate"
+
+# Create X containing the predictors and y containing the target
+X = df_clean[features].copy()
+y = pd.to_numeric(df_clean[target], errors="coerce")
+
+# Remove rows where the target interest rate is missing or non-numeric
+valid_target = y.notna()
+X = X.loc[valid_target].copy()
+y = y.loc[valid_target].copy()
+
+print("Feature data shape:", X.shape)
+print("Target data shape:", y.shape)
+
+Cell 2 — Split the dataset into training and testing sets
+
+# Split the dataset:
+# 80% is used to train the models
+# 20% is used to evaluate the models
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.20,
+    random_state=42
+)
+
+print("Training set shape:", X_train.shape)
+print("Testing set shape:", X_test.shape)
+
+Cell 3 — Create the preprocessing steps
+
+# Automatically identify numeric and categorical predictors
+numeric_features = X_train.select_dtypes(include=np.number).columns.tolist()
+categorical_features = X_train.select_dtypes(exclude=np.number).columns.tolist()
+
+print("Numeric features:", numeric_features)
+print("Categorical features:", categorical_features)
+
+# Numeric preprocessing:
+# 1. Replace missing values with the median
+numeric_transformer = Pipeline(
+    steps=[
+        ("imputer", SimpleImputer(strategy="median"))
+    ]
+)
+
+# Categorical preprocessing:
+# 1. Replace missing values with the most frequent category
+# 2. Convert categories into numeric dummy variables
+categorical_transformer = Pipeline(
+    steps=[
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        (
+            "onehot",
+            OneHotEncoder(
+                handle_unknown="ignore",
+                sparse_output=False
+            )
+        )
+    ]
+)
+
+# Apply the appropriate preprocessing to each type of column
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("numeric", numeric_transformer, numeric_features),
+        ("categorical", categorical_transformer, categorical_features)
+    ],
+    remainder="drop"
+)
+
+For older versions of scikit-learn that reject sparse_output=False, replace it with:
+
+OneHotEncoder(handle_unknown="ignore", sparse=False)
+
+Cell 4 — Create the three regression models
+
+# 1. Linear Regression pipeline
+linear_model = Pipeline(
+    steps=[
+        ("preprocessor", preprocessor),
+        ("model", LinearRegression())
+    ]
+)
+
+# 2. Polynomial Regression pipeline
+# PolynomialFeatures creates squared terms and interaction terms.
+# LinearRegression then fits those polynomial features.
+polynomial_model = Pipeline(
+    steps=[
+        ("preprocessor", preprocessor),
+        (
+            "polynomial_features",
+            PolynomialFeatures(
+                degree=2,
+                include_bias=False
+            )
+        ),
+        ("model", LinearRegression())
+    ]
+)
+
+# 3. Ridge Regression pipeline
+# StandardScaler standardizes the processed predictors.
+# Ridge applies L2 regularization with alpha=1.0.
+ridge_model = Pipeline(
+    steps=[
+        ("preprocessor", preprocessor),
+        ("scaler", StandardScaler()),
+        ("model", Ridge(alpha=1.0))
+    ]
+)
+
+Cell 5 — Train and evaluate all models
+
+# Store the models in a dictionary so they can be trained
+# and evaluated using the same process
+models = {
+    "Linear Regression": linear_model,
+    "Polynomial Regression (Degree 2)": polynomial_model,
+    "Ridge Regression": ridge_model
+}
+
+# Store the evaluation results
+results = []
+
+for model_name, model in models.items():
+    
+    # Train the model using the training data
+    model.fit(X_train, y_train)
+    
+    # Predict interest rates for the test data
+    y_pred = model.predict(X_test)
+    
+    # Calculate the evaluation metrics
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    mae = mean_absolute_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+    
+    # Print the results for the current model
+    print(f"\n{model_name}")
+    print("-" * len(model_name))
+    print(f"RMSE: {rmse:.4f}")
+    print(f"MAE:  {mae:.4f}")
+    print(f"R²:   {r2:.4f}")
+    
+    # Add the results to the comparison list
+    results.append(
+        {
+            "Model": model_name,
+            "RMSE": rmse,
+            "MAE": mae,
+            "R2 Score": r2
+        }
+    )
+
+Cell 6 — Create the model comparison table
+
+# Convert the evaluation results into a DataFrame
+comparison_table = pd.DataFrame(results)
+
+# Sort from lowest RMSE to highest RMSE
+comparison_table = comparison_table.sort_values(
+    by="RMSE",
+    ascending=True
+).reset_index(drop=True)
+
+# Round the metrics for easier reading
+comparison_table[["RMSE", "MAE", "R2 Score"]] = (
+    comparison_table[["RMSE", "MAE", "R2 Score"]].round(4)
+)
+
+print("Regression Model Comparison:")
+display(comparison_table)
+
+Lower RMSE and MAE indicate smaller prediction errors. A higher R² score indicates that the model explains more of the variation in interest_rate.
+
+I got this error when running the code: TypeError: OneHotEncoder.__init__() got an unexpected keyword argument 'sparse' Please fix the code by replacing sparse=False with sparse_output=False in the OneHotEncoder. Show me only the corrected part of the code.
+
+
+Thought for a second
+
+categorical_transformer = Pipeline(
+    steps=[
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        (
+            "onehot",
+            OneHotEncoder(
+                handle_unknown="ignore",
+                sparse_output=False
+            )
+        )
+    ]
+)
+
+
+I trained a Ridge Regression model on a loan dataset. Now I need to perform hyperparameter tuning using GridSearchCV to find the best alpha value for Ridge Regression. Please write Python code for a Jupyter Notebook to: 1. Define a parameter grid with alpha values: 0.01, 0.1, 1, 10, 100 2. Use GridSearchCV with cv=5 3. Print the best alpha value found 4. Print the best cross-validation score 5. Retrain Ridge with the best alpha and print RMSE, MAE and R2 The preprocessor pipeline is already defined as "preprocessor" and the train/test data are X_train, X_test, y_train, y_test.
+
+Thought for a couple of seconds
+
+import numpy as np
+
+from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import GridSearchCV
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+# Create a pipeline using the previously defined preprocessor
+ridge_pipeline = Pipeline(
+    steps=[
+        ("preprocessor", preprocessor),
+        ("scaler", StandardScaler()),
+        ("ridge", Ridge())
+    ]
+)
+
+# Define the alpha values to test
+parameter_grid = {
+    "ridge__alpha": [0.01, 0.1, 1, 10, 100]
+}
+
+# Perform 5-fold cross-validation.
+# Ridge uses R² as its default scoring metric.
+grid_search = GridSearchCV(
+    estimator=ridge_pipeline,
+    param_grid=parameter_grid,
+    cv=5,
+    scoring="r2",
+    n_jobs=-1
+)
+
+# Train and evaluate each alpha value using cross-validation
+grid_search.fit(X_train, y_train)
+
+# Print the best tuning results
+best_alpha = grid_search.best_params_["ridge__alpha"]
+
+print("Best alpha value:", best_alpha)
+print(f"Best cross-validation R² score: {grid_search.best_score_:.4f}")
+
+# Create and retrain Ridge Regression using the best alpha
+best_ridge_model = Pipeline(
+    steps=[
+        ("preprocessor", preprocessor),
+        ("scaler", StandardScaler()),
+        ("ridge", Ridge(alpha=best_alpha))
+    ]
+)
+
+best_ridge_model.fit(X_train, y_train)
+
+# Predict interest rates for the test set
+y_pred_best_ridge = best_ridge_model.predict(X_test)
+
+# Calculate test-set evaluation metrics
+rmse = np.sqrt(mean_squared_error(y_test, y_pred_best_ridge))
+mae = mean_absolute_error(y_test, y_pred_best_ridge)
+r2 = r2_score(y_test, y_pred_best_ridge)
+
+print("\nBest Ridge Regression Test Results")
+print("----------------------------------")
+print(f"RMSE: {rmse:.4f}")
+print(f"MAE:  {mae:.4f}")
+print(f"R²:   {r2:.4f}")
+
+
+I need to compare single-variable vs multi-variable regression. Using the loan dataset with df_clean dataframe, please write Python code to: 1. Train a Linear Regression using only credit_score to predict interest_rate (single variable) 2. Train a Linear Regression using all 8 features to predict interest_rate (multi variable) 3. Compare RMSE, MAE and R2 of both approaches 4. Print a comparison table
+
+Thought for a couple of seconds
+
+import numpy as np
+import pandas as pd
+
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+
+
+# ---------------------------------------------------------
+# 1. Define the target and the two feature sets
+# ---------------------------------------------------------
+
+target = "interest_rate"
+
+single_feature = [
+    "credit_score"
+]
+
+multi_features = [
+    "credit_score",
+    "annual_income",
+    "current_debt",
+    "debt_to_income_ratio",
+    "loan_amount",
+    "defaults_on_file",
+    "delinquencies_last_2yrs",
+    "derogatory_marks"
+]
+
+
+# ---------------------------------------------------------
+# 2. Prepare the data
+# ---------------------------------------------------------
+
+# Convert the target to numeric
+y = pd.to_numeric(df_clean[target], errors="coerce")
+
+# Keep only rows with a valid target value
+valid_rows = y.notna()
+
+X_single = df_clean.loc[valid_rows, single_feature].copy()
+X_multi = df_clean.loc[valid_rows, multi_features].copy()
+y = y.loc[valid_rows].copy()
+
+
+# ---------------------------------------------------------
+# 3. Create the same train/test split for both approaches
+# ---------------------------------------------------------
+
+# Split row indexes so both models use exactly the same observations
+train_index, test_index = train_test_split(
+    np.arange(len(y)),
+    test_size=0.20,
+    random_state=42
+)
+
+X_single_train = X_single.iloc[train_index]
+X_single_test = X_single.iloc[test_index]
+
+X_multi_train = X_multi.iloc[train_index]
+X_multi_test = X_multi.iloc[test_index]
+
+y_train = y.iloc[train_index]
+y_test = y.iloc[test_index]
+
+
+# ---------------------------------------------------------
+# 4. Single-variable Linear Regression
+# ---------------------------------------------------------
+
+single_model = Pipeline(
+    steps=[
+        (
+            "imputer",
+            SimpleImputer(strategy="median")
+        ),
+        (
+            "linear_regression",
+            LinearRegression()
+        )
+    ]
+)
+
+single_model.fit(X_single_train, y_train)
+
+single_predictions = single_model.predict(X_single_test)
+
+
+# ---------------------------------------------------------
+# 5. Multi-variable preprocessing
+# ---------------------------------------------------------
+
+numeric_features = [
+    "credit_score",
+    "annual_income",
+    "current_debt",
+    "debt_to_income_ratio",
+    "loan_amount",
+    "delinquencies_last_2yrs",
+    "derogatory_marks"
+]
+
+categorical_features = [
+    "defaults_on_file"
+]
+
+numeric_transformer = Pipeline(
+    steps=[
+        (
+            "imputer",
+            SimpleImputer(strategy="median")
+        )
+    ]
+)
+
+categorical_transformer = Pipeline(
+    steps=[
+        (
+            "imputer",
+            SimpleImputer(strategy="most_frequent")
+        ),
+        (
+            "onehot",
+            OneHotEncoder(
+                handle_unknown="ignore",
+                sparse_output=False
+            )
+        )
+    ]
+)
+
+multi_preprocessor = ColumnTransformer(
+    transformers=[
+        (
+            "numeric",
+            numeric_transformer,
+            numeric_features
+        ),
+        (
+            "categorical",
+            categorical_transformer,
+            categorical_features
+        )
+    ]
+)
+
+
+# ---------------------------------------------------------
+# 6. Multi-variable Linear Regression
+# ---------------------------------------------------------
+
+multi_model = Pipeline(
+    steps=[
+        (
+            "preprocessor",
+            multi_preprocessor
+        ),
+        (
+            "linear_regression",
+            LinearRegression()
+        )
+    ]
+)
+
+multi_model.fit(X_multi_train, y_train)
+
+multi_predictions = multi_model.predict(X_multi_test)
+
+
+# ---------------------------------------------------------
+# 7. Calculate RMSE, MAE, and R²
+# ---------------------------------------------------------
+
+single_rmse = np.sqrt(
+    mean_squared_error(y_test, single_predictions)
+)
+single_mae = mean_absolute_error(
+    y_test,
+    single_predictions
+)
+single_r2 = r2_score(
+    y_test,
+    single_predictions
+)
+
+multi_rmse = np.sqrt(
+    mean_squared_error(y_test, multi_predictions)
+)
+multi_mae = mean_absolute_error(
+    y_test,
+    multi_predictions
+)
+multi_r2 = r2_score(
+    y_test,
+    multi_predictions
+)
+
+
+# ---------------------------------------------------------
+# 8. Create and print the comparison table
+# ---------------------------------------------------------
+
+comparison_table = pd.DataFrame(
+    {
+        "Model": [
+            "Single Variable: Credit Score",
+            "Multi Variable: 8 Features"
+        ],
+        "RMSE": [
+            single_rmse,
+            multi_rmse
+        ],
+        "MAE": [
+            single_mae,
+            multi_mae
+        ],
+        "R2 Score": [
+            single_r2,
+            multi_r2
+        ]
+    }
+)
+
+comparison_table[["RMSE", "MAE", "R2 Score"]] = (
+    comparison_table[["RMSE", "MAE", "R2 Score"]].round(4)
+)
+
+print("Single-Variable vs Multi-Variable Regression")
+display(comparison_table)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
